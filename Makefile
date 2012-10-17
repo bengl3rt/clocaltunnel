@@ -29,7 +29,6 @@ staticlib:
 	rm -f *.o
 	gcc $(ARCHS) -c $(LIB_SOURCES)
 	ar -x $(LIBSSH2_STATIC_PATH)
-	#ar rcs libclocaltunnel.a *.o
 	libtool -o libclocaltunnel.a *.o
 	rm __.SYMDEF\ SORTED
 	rm -f *.o
