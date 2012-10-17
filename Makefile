@@ -1,9 +1,11 @@
+#ARCHS=-arch i386
+CFLAGS=-O3 -Wall $(ARCHS)
 LIB_DEPS=-lcurl -pthread -lz -lcrypto
 LIB_SOURCES=jsmn/jsmn.c clocaltunnel.c
 
 #Build the example code with the clocaltunnel source emebdded directly
 example:
-	gcc -O3 -Wall -o clocaltunneltest $(LIB_DEPS) -lssh2 $(LIB_SOURCES) example.c
+	gcc $(CFLAGS) -o clocaltunneltest $(LIB_DEPS) -lssh2 $(LIB_SOURCES) example.c
 
 clean:
 	rm -f clocaltunneltest*
@@ -13,11 +15,10 @@ clean:
 
 #Build clocaltunnel as a shared library
 dylib:
-	gcc -dynamiclib -O3 -Wall -o libclocaltunnel.dylib $(LIB_DEPS) -lssh2 $(LIB_SOURCES)
+	gcc $(ARCHS) -dynamiclib $(CFLAGS) -o libclocaltunnel.dylib $(LIB_DEPS) -lssh2 $(LIB_SOURCES)
 
-#This path works if your Homebrew install is in the default location
-#Change it if yours is not, or if you built libssh2 from source someplace else
-LIBSSH2_STATIC_PATH=/usr/local/Cellar/libssh2/1.4.2/lib/libssh2.a
+#Point at the static library of libssh2. Homebrew installs one or you can build your own
+LIBSSH2_STATIC_PATH=/Users/ben/Code/libssh2-1.4.2/src/.libs/libssh2.a
 
 #Build clocaltunnel as a shared library with libssh2 linked statically
 staticlibssh:
@@ -25,14 +26,17 @@ staticlibssh:
 
 #Build a statical library of clocaltunnel containing a statically linked libssh2
 staticlib:
-	gcc -c $(LIB_SOURCES)
+	rm -f *.o
+	gcc $(ARCHS) -c $(LIB_SOURCES)
 	ar -x $(LIBSSH2_STATIC_PATH)
-	ar rcs libclocaltunnel.a *.o
+	#ar rcs libclocaltunnel.a *.o
+	libtool -o libclocaltunnel.a *.o
 	rm __.SYMDEF\ SORTED
+	rm -f *.o
 
 #Build the example code linking the shared or static clocaltunnel libraru
 libexample:
-	gcc $(LIB_DEPS) -L. -lclocaltunnel -o clocaltunneltest example.c
+	gcc $(CFLAGS) $(LIB_DEPS) -L. -lclocaltunnel -o clocaltunneltest example.c
 
 static: staticlib libexample
 dynamic: dylib libexample
