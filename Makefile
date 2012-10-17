@@ -1,4 +1,4 @@
-LIB_DEPS=-lcurl -lssh2
+LIB_DEPS=-lcurl -lssh2 -pthread
 LIB_SOURCES=jsmn/jsmn.c clocaltunnel.c
 
 example:

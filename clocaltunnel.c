@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 #include <curl/curl.h>
 
@@ -17,6 +18,7 @@
 struct clocaltunnel_client {
 	unsigned int local_port;
 	char *external_url;
+	pthread_t recv_thread;
 };
 
 CURL *curl_inst;
@@ -361,9 +363,9 @@ int tunnel_local_port(struct clocaltunnel_client *c) {
 	struct open_localtunnel tunnelinfo;
 	contact_localtunnel_service(&tunnelinfo);
 
+
 	c->external_url = tunnelinfo.host;
 
-	//TODO DO THIS IN A NEW THREAD!!!
 	rc = open_ssh_tunnel(tunnelinfo, c->local_port);
 
 	free(tunnelinfo.host);
@@ -373,9 +375,14 @@ int tunnel_local_port(struct clocaltunnel_client *c) {
 	return rc;
 }
 
+void *client_thread_start(void *client_data) {
+	tunnel_local_port((struct clocaltunnel_client *)client_data);	
+	pthread_exit(NULL);
+}
+
 void clocaltunnel_client_start(struct clocaltunnel_client *c, clocaltunnel_error *err) {
-	if (tunnel_local_port(c)) {
-		*err = CLOCALTUNEL_ERROR_MISC;
+	if (pthread_create(&c->recv_thread, NULL, client_thread_start, (void*)c)) {
+		*err = CLOCALTUNNEL_ERROR_PTHREAD;
 	}
 }
 
@@ -401,9 +408,14 @@ struct clocaltunnel_client *clocaltunnel_client_alloc(clocaltunnel_error *err) {
 	return new_client;
 }
 
-void clocaltunnel_client_free(struct clocaltunnel_client *client) {
-	//TODO stop client if running
+void clocaltunnel_client_stop(struct clocaltunnel_client *c) {
+	if(pthread_cancel(c->recv_thread)) {
+		printf("Error stopping thread\n");
+	}
+}
 
+
+void clocaltunnel_client_free(struct clocaltunnel_client *client) {
 	free(client);
 }
 
