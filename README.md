@@ -5,6 +5,16 @@ Clocaltunnel is a [LocalTunnel][lt-website] client written in C, designed for em
 
 [lt-website]: http://progrium.com/localtunnel/
 
+TODO
+----
+
+* Lots of error handling (in its present state it likely crashes or fails silently a lot)
+* Do all SSH communication and tunneling in a separate thread so that clocaltunnel_client_start doesn't block
+* Fail gracefully if there is no SSH key on disk
+* Upload the public key if there is one on disk but the Localtunnel service hasn't heard of it yet
+* Make JSMN JSON parsing much more robust and future-proof
+
+
 Use
 ---
 
