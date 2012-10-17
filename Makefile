@@ -1,13 +1,14 @@
-LIB_DEPS=-lcurl -pthread -lssh2
+LIB_DEPS=-lcurl -pthread
 LIB_SOURCES=jsmn/jsmn.c clocaltunnel.c
 
 example:
-	gcc -O3 -Wall -o clocaltunneltest $(LIB_DEPS) $(LIB_SOURCES) example.c
+	gcc -O3 -Wall -o clocaltunneltest $(LIB_DEPS) -lssh2 $(LIB_SOURCES) example.c
 
 clean:
 	rm -f clocaltunneltest*
 	rm -f *.o
 	rm -f *.dylib
+	rm -f *.a
 
 dylib:
 	gcc -dynamiclib -O3 -Wall -o libclocaltunnel.dylib $(LIB_DEPS) $(LIB_SOURCES)
@@ -24,7 +25,7 @@ staticlibssh:
 	gcc $(LIBSSH2_STATIC_PATH) -dynamiclib -o libclocaltunnel.dylib -lz -lcurl -pthread -lcrypto $(LIB_SOURCES)
 
 libexample:
-	gcc -L. -lclocaltunnel -o clocaltunnelteststatic example.c
+	gcc $(LIB_DEPS) -L. -lclocaltunnel -o clocaltunneltest example.c
 
 static: staticlibssh libexample
 dynamic: dylib libexample
