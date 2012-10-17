@@ -19,6 +19,7 @@ struct clocaltunnel_client {
 	unsigned int local_port;
 	char *external_url;
 	pthread_t recv_thread;
+	clocaltunnel_client_state state;
 };
 
 CURL *curl_inst;
@@ -234,7 +235,7 @@ shutdown:
 }
 
 
-int open_ssh_tunnel(struct open_localtunnel tunnelinfo, unsigned int local_destport) {
+int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_client *c) {
 	const char *remote_listenhost = "localhost"; /* resolved by the server */
 	char *local_destip = "127.0.0.1";
 
@@ -244,7 +245,9 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, unsigned int local_destp
 	LIBSSH2_LISTENER *listener = NULL;
     struct libssh2_agent_publickey *identity, *prev_identity = NULL;
 
+#ifdef CLOCALTUNNEL_DEBUG
     printf("Host: %s Port: %s User: %s\n", tunnelinfo.host, tunnelinfo.port, tunnelinfo.user);
+#endif
 
 	int sock = get_socket_to_localtunnel(tunnelinfo.host);
 
@@ -282,20 +285,25 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, unsigned int local_destp
         if (rc == 1)
             break;
         if (rc < 0) {
+#ifdef CLOCALTUNNEL_DEBUG
             fprintf(stderr,
                     "Failure obtaining identity from ssh-agent support\n");
+#endif
             rc = 1;
             goto shutdown;
         }
         if (libssh2_agent_userauth(agent, tunnelinfo.user, identity)) {
-
+#ifdef CLOCALTUNNEL_DEBUG
             printf("Authentication with username %s and "
                    "public key %s failed!\n",
                    tunnelinfo.user, identity->comment);
+#endif
         } else {
+#ifdef CLOCALTUNNEL_DEBUG
             printf("Authentication with username %s and "
                    "public key %s succeeded!\n",
                    tunnelinfo.user, identity->comment);
+#endif
             break;
         }
         prev_identity = identity;
@@ -308,8 +316,10 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, unsigned int local_destp
     unsigned int remote_wantport = atoi(tunnelinfo.port);
     int remote_listenport;
 
+#ifdef CLOCALTUNNEL_DEBUG
     printf("Asking server to listen on remote %s:%d\n", remote_listenhost, remote_wantport);
- 
+#endif
+
     listener = libssh2_channel_forward_listen_ex(session, remote_listenhost, remote_wantport, &remote_listenport, 10);
     if (!listener) {
         fprintf(stderr, "Could not start the tcpip-forward listener!\n"
@@ -318,11 +328,15 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, unsigned int local_destp
         rc = 1;
         goto shutdown;
     }
- 
+
+#ifdef CLOCALTUNNEL_DEBUG
     printf("Server is listening on %s:%d\n", remote_listenhost,
         remote_listenport);
  
     printf("Waiting for remote connection\n");
+#endif
+
+    c->state = CLOCALTUNNEL_CLIENT_TUNNEL_OPENED;
 
     while (1) {
     	LIBSSH2_CHANNEL *channel = libssh2_channel_forward_accept(listener);
@@ -335,10 +349,9 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, unsigned int local_destp
 	        goto shutdown;
 	    }
     
-	    do_tunnel_listen(local_destip, local_destport, session, channel);
+	    do_tunnel_listen(local_destip, c->local_port, session, channel);
 		
 	    libssh2_channel_free(channel);
-
     }
 
 shutdown:
@@ -363,10 +376,11 @@ int tunnel_local_port(struct clocaltunnel_client *c) {
 	struct open_localtunnel tunnelinfo;
 	contact_localtunnel_service(&tunnelinfo);
 
+	c->state = CLOCALTUNNEL_CLIENT_TUNNEL_REGISTERED;
 
 	c->external_url = tunnelinfo.host;
 
-	rc = open_ssh_tunnel(tunnelinfo, c->local_port);
+	rc = open_ssh_tunnel(tunnelinfo, c);
 
 	free(tunnelinfo.host);
 	free(tunnelinfo.user);
@@ -383,6 +397,8 @@ void *client_thread_start(void *client_data) {
 void clocaltunnel_client_start(struct clocaltunnel_client *c, clocaltunnel_error *err) {
 	if (pthread_create(&c->recv_thread, NULL, client_thread_start, (void*)c)) {
 		*err = CLOCALTUNNEL_ERROR_PTHREAD;
+	} else {
+		c->state = CLOCALTUNNEL_CLIENT_STARTING;
 	}
 }
 
@@ -411,6 +427,8 @@ struct clocaltunnel_client *clocaltunnel_client_alloc(clocaltunnel_error *err) {
 void clocaltunnel_client_stop(struct clocaltunnel_client *c) {
 	if(pthread_cancel(c->recv_thread)) {
 		printf("Error stopping thread\n");
+	} else {
+		c->state = CLOCALTUNNEL_CLIENT_INITIALIZED;
 	}
 }
 
@@ -421,4 +439,17 @@ void clocaltunnel_client_free(struct clocaltunnel_client *client) {
 
 void clocaltunnel_client_init(struct clocaltunnel_client *client, unsigned int local_port) {
 	client->local_port = local_port;
+	client->state = CLOCALTUNNEL_CLIENT_INITIALIZED;
+}
+
+clocaltunnel_client_state clocaltunnel_client_get_state(struct clocaltunnel_client *c) {
+	return c->state;
+}
+
+char *clocaltunnel_client_get_external_url(struct clocaltunnel_client *c) {
+	if (c->state < CLOCALTUNNEL_CLIENT_TUNNEL_REGISTERED) {
+		return NULL;
+	}
+
+	return c->external_url;
 }

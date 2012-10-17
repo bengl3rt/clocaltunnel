@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
+#include <unistd.h>
+#include <string.h>
 
 #include "clocaltunnel.h"
 
@@ -33,7 +35,16 @@ int main(int argc, char **argv) {
 
 	clocaltunnel_client_start(my_client, &err);
 
-	printf("Client running. Use Ctrl+C to exit.\n");
+	while (clocaltunnel_client_get_state(my_client) < CLOCALTUNNEL_CLIENT_TUNNEL_OPENED) {
+		//TODO wait on a semaphore with a timeout? give a callback? TBD
+		usleep(50);
+	}
+
+	char external_url[50];
+
+	strcpy(external_url, clocaltunnel_client_get_external_url(my_client));
+
+	printf("Client running. Use Ctrl+C to exit. URL: %s\n", external_url);
 
 	while(1) {}
 
