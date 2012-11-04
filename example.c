@@ -8,13 +8,17 @@
 
 static struct clocaltunnel_client *my_client;
 
+void cleanup() {
+	printf("\nShutting down clocaltunnel client...\n");
+	clocaltunnel_client_stop(my_client);
+	clocaltunnel_client_free(my_client);
+
+	clocaltunnel_global_cleanup();
+}
+
 void int_handler(int signal) {
 	if (my_client) {
-			printf("\nShutting down clocaltunnel client...\n");
-			clocaltunnel_client_stop(my_client);
-			clocaltunnel_client_free(my_client);
-
-			clocaltunnel_global_cleanup();
+		cleanup();
 	}
 
 	exit(0);
@@ -33,11 +37,14 @@ int main(int argc, char **argv) {
 
 	printf("Starting clocaltunnel client...\n");
 
-	clocaltunnel_client_start(my_client, &err);
+	clocaltunnel_client_start(my_client);
 
 	while (clocaltunnel_client_get_state(my_client) < CLOCALTUNNEL_CLIENT_TUNNEL_OPENED) {
-		//TODO wait on a semaphore with a timeout? give a callback? TBD
-		usleep(50);
+		usleep(1000000);
+
+		if (clocaltunnel_client_get_state(my_client) == CLOCALTUNNEL_CLIENT_ERROR)  {
+			printf("Error! %d\n", clocaltunnel_client_get_last_error(my_client));
+		}
 	}
 
 	char external_url[50];

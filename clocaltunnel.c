@@ -19,6 +19,7 @@ struct clocaltunnel_client {
 	unsigned int local_port;
 	char *external_url;
 	pthread_t recv_thread;
+	clocaltunnel_error last_err;
 	clocaltunnel_client_state state;
 };
 
@@ -43,9 +44,9 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 
 	mem->memory = realloc(mem->memory, mem->size + realsize + 1);
 	if (mem->memory == NULL) {
-	/* out of memory! */ 
-	printf("not enough memory (realloc returned NULL)\n");
-	exit(EXIT_FAILURE);
+		/* out of memory! */ 
+		printf("not enough memory (realloc returned NULL)\n");
+		exit(EXIT_FAILURE);
 	}
 
 	memcpy(&(mem->memory[mem->size]), contents, realsize);
@@ -77,7 +78,16 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
 	curl_easy_setopt(curl_inst, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
 	/* get it! */ 
-	curl_easy_perform(curl_inst);
+	CURLcode res = curl_easy_perform(curl_inst);
+
+	if (res != CURLE_OK) {
+#if CLOCALTUNNEL_DEBUG
+		   fprintf(stderr, "curl_easy_perform() failed: %s\n",
+              curl_easy_strerror(res));
+#endif
+		   return CLOCALTUNNEL_ERROR_CURL;
+
+	}
 
 	jsmn_parser p;
 	jsmntok_t tok[10];
@@ -110,12 +120,12 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
 cleanup:
 	free(chunk.memory);
 
-	return 0;
+	return CLOCALTUNNEL_OK;
 }
 
-int get_socket_to_localtunnel(char *host) {
+int get_socket_to_localtunnel(int *sock, char *host) {
 	struct addrinfo hints, *res, *res0;
-	int sock, error;
+	int error;
 	const char *cause = NULL;
 
 	memset(&hints, 0, sizeof(hints));
@@ -123,21 +133,22 @@ int get_socket_to_localtunnel(char *host) {
 	hints.ai_socktype = SOCK_STREAM;
 	error = getaddrinfo(host, "22", &hints, &res0);
 	if (error) {
-		return -1;
+		printf("getaddrinfo error\n");
+		return CLOCALTUNNEL_ERROR_SOCKET;
 	}
-	sock = -1;
+	*sock = -1;
 	for (res = res0; res; res = res->ai_next) {
-	   sock = socket(res->ai_family, res->ai_socktype,
+	   *sock = socket(res->ai_family, res->ai_socktype,
 	       res->ai_protocol);
-	   if (sock < 0) {
+	   if (*sock < 0) {
 	           cause = "socket";
 	           continue;
 	   }
 	  
-	   if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
+	   if (connect(*sock, res->ai_addr, res->ai_addrlen) < 0) {
 	           cause = "connect";
-	           close(sock);
-	           sock = -1;
+	           close(*sock);
+	           *sock = -1;
 	           continue;
 	   }
 
@@ -146,7 +157,12 @@ int get_socket_to_localtunnel(char *host) {
 	
 	freeaddrinfo(res0);
 
-	return sock;
+	if (*sock == -1) {
+		printf("Socket error in %s\n", cause);
+		return CLOCALTUNNEL_ERROR_SOCKET;
+	}
+
+	return CLOCALTUNNEL_OK;
 }
 
 int do_tunnel_listen(char *local_destip, unsigned int local_destport, LIBSSH2_SESSION *session, LIBSSH2_CHANNEL *channel) {
@@ -239,7 +255,7 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
 	const char *remote_listenhost = "localhost"; /* resolved by the server */
 	char *local_destip = "127.0.0.1";
 
-	int rc = 0;
+	int rc = CLOCALTUNNEL_OK;
 	LIBSSH2_SESSION *session;
 	LIBSSH2_AGENT *agent = NULL;
 	LIBSSH2_LISTENER *listener = NULL;
@@ -249,14 +265,18 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
     printf("Host: %s Port: %s User: %s\n", tunnelinfo.host, tunnelinfo.port, tunnelinfo.user);
 #endif
 
-	int sock = get_socket_to_localtunnel(tunnelinfo.host);
+	int sock;  
+
+	if (get_socket_to_localtunnel(&sock, tunnelinfo.host) != CLOCALTUNNEL_OK) {
+		return CLOCALTUNNEL_ERROR_SOCKET;
+	}
 
 	session = libssh2_session_init();
 
     if (libssh2_session_handshake(session, sock)) {
 
         fprintf(stderr, "Failure establishing SSH session\n");
-        return -1;
+        return CLOCALTUNNEL_ERROR_SSH;
     }
 
 	 /* Connect to the ssh-agent */ 
@@ -264,19 +284,19 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
 
     if (!agent) {
         fprintf(stderr, "Failure initializing ssh-agent support\n");
-        rc = 1;
+        rc = CLOCALTUNNEL_ERROR_SSH;
         goto shutdown;
     }
     if (libssh2_agent_connect(agent)) {
 
         fprintf(stderr, "Failure connecting to ssh-agent\n");
-        rc = 1;
+        rc = CLOCALTUNNEL_ERROR_SSH;
         goto shutdown;
     }
     if (libssh2_agent_list_identities(agent)) {
 
         fprintf(stderr, "Failure requesting identities to ssh-agent\n");
-        rc = 1;
+        rc = CLOCALTUNNEL_ERROR_SSH;
         goto shutdown;
     }
     while (1) {
@@ -289,7 +309,7 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
             fprintf(stderr,
                     "Failure obtaining identity from ssh-agent support\n");
 #endif
-            rc = 1;
+            rc = CLOCALTUNNEL_ERROR_SSH;
             goto shutdown;
         }
         if (libssh2_agent_userauth(agent, tunnelinfo.user, identity)) {
@@ -325,7 +345,7 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
         fprintf(stderr, "Could not start the tcpip-forward listener!\n"
                 "(Note that this can be a problem at the server!"
                 " Please review the server logs.)\n");
-        rc = 1;
+        rc = CLOCALTUNNEL_ERROR_SSH;
         goto shutdown;
     }
 
@@ -345,7 +365,7 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
 	        fprintf(stderr, "Could not accept connection!\n"
 	                "(Note that this can be a problem at the server!"
 	                " Please review the server logs.)\n");
-	        rc = 1;
+	        rc = CLOCALTUNNEL_ERROR_SSH;
 	        goto shutdown;
 	    }
     
@@ -371,22 +391,39 @@ shutdown:
 }
 
 
-int tunnel_local_port(struct clocaltunnel_client *c) {
-	int rc = 0;
+void tunnel_local_port(struct clocaltunnel_client *c) {
 	struct open_localtunnel tunnelinfo;
-	contact_localtunnel_service(&tunnelinfo);
+
+	memset(&tunnelinfo, 0, sizeof(struct open_localtunnel));
+	
+	c->last_err = contact_localtunnel_service(&tunnelinfo);
+
+	if (c->last_err != CLOCALTUNNEL_OK) {
+		c->state = CLOCALTUNNEL_CLIENT_ERROR;
+		goto cleanup;
+	}
 
 	c->state = CLOCALTUNNEL_CLIENT_TUNNEL_REGISTERED;
 
 	c->external_url = tunnelinfo.host;
 
-	rc = open_ssh_tunnel(tunnelinfo, c);
+	c->last_err = open_ssh_tunnel(tunnelinfo, c);
 
-	free(tunnelinfo.host);
-	free(tunnelinfo.user);
-	free(tunnelinfo.port);
+	if (c->last_err != CLOCALTUNNEL_OK) {
+		printf("open_ssh_tunnel error: %d\n", c->last_err);
+		c->state = CLOCALTUNNEL_CLIENT_ERROR;
+		goto cleanup;
+	}
 
-	return rc;
+cleanup:
+	if (tunnelinfo.host)
+		free(tunnelinfo.host);
+
+	if (tunnelinfo.user)
+		free(tunnelinfo.user);
+
+	if (tunnelinfo.port)
+		free(tunnelinfo.port);
 }
 
 void *client_thread_start(void *client_data) {
@@ -394,11 +431,15 @@ void *client_thread_start(void *client_data) {
 	pthread_exit(NULL);
 }
 
-void clocaltunnel_client_start(struct clocaltunnel_client *c, clocaltunnel_error *err) {
+int clocaltunnel_client_start(struct clocaltunnel_client *c) {
 	if (pthread_create(&c->recv_thread, NULL, client_thread_start, (void*)c)) {
-		*err = CLOCALTUNNEL_ERROR_PTHREAD;
+		printf("Pthread error\n");
+		c->last_err = CLOCALTUNNEL_ERROR_PTHREAD;
+		c->state = CLOCALTUNNEL_CLIENT_ERROR;
+		return (-1);
 	} else {
 		c->state = CLOCALTUNNEL_CLIENT_STARTING;
+		return CLOCALTUNNEL_OK;
 	}
 }
 
@@ -413,13 +454,8 @@ void clocaltunnel_global_cleanup() {
 	curl_global_cleanup();
 }
 
-struct clocaltunnel_client *clocaltunnel_client_alloc(clocaltunnel_error *err) {
+struct clocaltunnel_client *clocaltunnel_client_alloc() {
 	struct clocaltunnel_client *new_client = calloc(1, sizeof(struct clocaltunnel_client));
-
-	if (!new_client) {
-		*err = CLOCALTUNNEL_ERROR_MALLOC;
-		return NULL;
-	}
 
 	return new_client;
 }
@@ -440,6 +476,7 @@ void clocaltunnel_client_free(struct clocaltunnel_client *client) {
 void clocaltunnel_client_init(struct clocaltunnel_client *client, unsigned int local_port) {
 	client->local_port = local_port;
 	client->state = CLOCALTUNNEL_CLIENT_INITIALIZED;
+	client->last_err = CLOCALTUNNEL_OK;
 }
 
 clocaltunnel_client_state clocaltunnel_client_get_state(struct clocaltunnel_client *c) {
@@ -452,4 +489,8 @@ char *clocaltunnel_client_get_external_url(struct clocaltunnel_client *c) {
 	}
 
 	return c->external_url;
+}
+
+clocaltunnel_error clocaltunnel_client_get_last_error(struct clocaltunnel_client *c) {
+	return c->last_err;
 }
