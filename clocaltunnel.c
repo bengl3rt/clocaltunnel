@@ -302,14 +302,20 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
     while (1) {
         rc = libssh2_agent_get_identity(agent, &identity, prev_identity);
 
-        if (rc == 1)
-            break;
+        if (rc == 1) {
+        	if (prev_identity == NULL) {
+        		rc = CLOCALTUNNEL_ERROR_SSH_AGENT;
+        	}
+        	
+            break;	
+        }
+
         if (rc < 0) {
 #ifdef CLOCALTUNNEL_DEBUG
             fprintf(stderr,
                     "Failure obtaining identity from ssh-agent support\n");
 #endif
-            rc = CLOCALTUNNEL_ERROR_SSH;
+            rc = CLOCALTUNNEL_ERROR_SSH_AGENT;
             goto shutdown;
         }
         if (libssh2_agent_userauth(agent, tunnelinfo.user, identity)) {
