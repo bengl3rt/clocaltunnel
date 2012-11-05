@@ -43,7 +43,43 @@ int main(int argc, char **argv) {
 		usleep(1000000);
 
 		if (clocaltunnel_client_get_state(my_client) == CLOCALTUNNEL_CLIENT_ERROR)  {
-			printf("Error! %d\n", clocaltunnel_client_get_last_error(my_client));
+			clocaltunnel_error err = clocaltunnel_client_get_last_error(my_client);
+
+			switch (err) {
+                case CLOCALTUNNEL_ERROR_MALLOC:
+                {
+                    printf("Unable to allocate memory for localtunnel client\n");
+                    break;
+                }
+                case CLOCALTUNNEL_ERROR_MISC:
+                {
+                    printf("Misc error in localtunnel client\n");
+                    break;
+                }
+                    
+                case CLOCALTUNNEL_ERROR_PTHREAD:
+                {
+                    printf("Error starting receive thread in localtunnel client\n");
+                    break;
+                }
+                case CLOCALTUNNEL_ERROR_CURL:
+                {
+                    printf("Error communicating with localtunnel web service\n");
+                    break;
+                }
+                case CLOCALTUNNEL_ERROR_SOCKET:
+                {
+                    printf("Unable to open a socket to localtunnel server\n");
+                    break;
+                }
+                case CLOCALTUNNEL_ERROR_SSH:
+                {
+                    printf("Error establishing SSH communication with localtunnel server\n");
+                    break;
+                }
+                default:
+                    break;
+            }
 		}
 	}
 

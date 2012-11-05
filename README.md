@@ -8,13 +8,9 @@ Clocaltunnel is a [LocalTunnel][lt-website] client written in C, designed for em
 TODO
 ----
 
-* Upload the public key if there is one on disk but the Localtunnel service hasn't heard of it yet
-* (or magically make a key on the user's behalf? Sounds dirty)
 * Better client state management/state machine
-* Lots of error handling (in its present state it likely crashes or fails silently a lot)
 * Fail gracefully if there is no SSH key on disk
 * Make JSMN JSON parsing much more robust and future-proof
-
 
 Use
 ---
