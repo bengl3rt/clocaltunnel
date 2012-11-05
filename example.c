@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
                     printf("Error establishing SSH communication with localtunnel server\n");
                     break;
                 }
-                case CLOCALTUNNEL_ERROR_SSH_AGENT
+                case CLOCALTUNNEL_ERROR_SSH_AGENT:
                 {
                 	printf("SSH agent could not authenticate. Try adding a key using ssh-add\n");
                 	break;
