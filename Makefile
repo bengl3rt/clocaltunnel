@@ -15,7 +15,7 @@ clean:
 
 #Build clocaltunnel as a shared library
 dylib:
-	gcc $(ARCHS) -dynamiclib $(CFLAGS) -o libclocaltunnel.dylib $(LIB_DEPS) -lssh2 $(LIB_SOURCES)
+	gcc $(ARCHS) $(DEFINES) -dynamiclib $(CFLAGS) -o libclocaltunnel.dylib $(LIB_DEPS) -lssh2 $(LIB_SOURCES)
 
 #Point at the static library of libssh2. Homebrew installs one or you can build your own
 LIBSSH2_STATIC_PATH=/Users/ben/Code/libssh2-1.4.2/src/.libs/libssh2.a
@@ -27,11 +27,14 @@ staticlibssh:
 #Build a statical library of clocaltunnel containing a statically linked libssh2
 staticlib:
 	rm -f *.o
-	gcc $(ARCHS) -c $(LIB_SOURCES)
+	gcc $(ARCHS) $(DEFINES) -c $(LIB_SOURCES)
 	ar -x $(LIBSSH2_STATIC_PATH)
 	libtool -o libclocaltunnel.a *.o
 	rm __.SYMDEF\ SORTED
 	rm -f *.o
+
+staticlibdebug: DEFINES = -DCLOCALTUNNEL_DEBUG
+staticlibdebug: staticlib
 
 #Build the example code linking the shared or static clocaltunnel libraru
 libexample:

@@ -9,7 +9,7 @@ TODO
 ----
 
 * Better client state management/state machine
-* Fail gracefully if there is no SSH key on disk
+* Upload SSH key, if available, in the HTTP request to localtunnel
 * Make JSMN JSON parsing much more robust and future-proof
 
 Use
