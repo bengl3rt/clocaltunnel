@@ -82,6 +82,11 @@ int main(int argc, char **argv) {
                 	printf("SSH agent could not authenticate. Try adding a key using ssh-add\n");
                 	break;
                 }
+                case CLOCALTUNNEL_ERROR_SSH_KEY:
+                {
+                    printf("No SSH key found on disk. Try creating one using ssh-keygen\n");
+                    break;
+                }
                 default:
                     break;
             }

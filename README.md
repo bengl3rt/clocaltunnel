@@ -9,7 +9,6 @@ TODO
 ----
 
 * Better client state management/state machine
-* Upload SSH key, if available, in the HTTP request to localtunnel
 * Make JSMN JSON parsing much more robust and future-proof
 
 Use

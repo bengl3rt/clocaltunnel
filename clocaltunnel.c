@@ -12,6 +12,9 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include <sys/types.h>
+#include <pwd.h>
+
 #include "jsmn/jsmn.h"
 #include <libssh2.h>
 
@@ -56,14 +59,55 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 	return realsize;
 }
 
+char *get_ssh_key() {
+	struct passwd *pw = getpwuid(getuid());
+
+	const char *homedir = pw->pw_dir;
+
+	const char *ssh_key_path = "/.ssh/id_rsa.pub";
+
+	char full_ssh_key_path[strlen(homedir)+strlen(ssh_key_path)+1];
+
+	sprintf(full_ssh_key_path, "%s%s", homedir, ssh_key_path);
+
+	long f_size;
+	char* key;
+	size_t key_size, result;
+	FILE* fp = fopen(full_ssh_key_path, "r");
+
+	if (fp == NULL) {
+		return NULL;
+	}
+
+	fseek(fp, 0, SEEK_END);
+	f_size = ftell(fp); /* This returns 29696, but file is 85 bytes */
+	fseek(fp, 0, SEEK_SET);
+	key_size = sizeof(char) * f_size;
+	key = malloc(key_size);
+	result = fread(key, 1, f_size, fp);
+
+	fclose(fp);
+
+	return key;
+}
+
 int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
 	int rc = 0;
 	char *tunnel_open_url = "http://open.localtunnel.com";
+
+	struct curl_httppost *formpost=NULL;
+    struct curl_httppost *lastptr=NULL;
 
 	struct MemoryStruct chunk;
 
 	chunk.memory = malloc(1);  /* will be grown as needed by the realloc above */ 
 	chunk.size = 0;    /* no data at this point */
+
+	char *ssh_key = get_ssh_key();
+
+	if (ssh_key == NULL) {
+		return CLOCALTUNNEL_ERROR_SSH_KEY;
+	}
 
 	curl_easy_setopt(curl_inst, CURLOPT_URL, tunnel_open_url);
 
@@ -77,8 +121,18 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
 	 field, so we provide one */ 
 	curl_easy_setopt(curl_inst, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
+	curl_formadd(&formpost,
+                 &lastptr,
+                 CURLFORM_COPYNAME, "key",
+                 CURLFORM_COPYCONTENTS, ssh_key,
+                 CURLFORM_END);
+
+	curl_easy_setopt(curl_inst, CURLOPT_HTTPPOST, formpost);
+
 	/* get it! */ 
 	CURLcode res = curl_easy_perform(curl_inst);
+
+	curl_formfree(formpost);
 
 	if (res != CURLE_OK) {
 #if CLOCALTUNNEL_DEBUG
