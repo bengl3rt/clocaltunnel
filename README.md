@@ -8,13 +8,12 @@ Clocaltunnel is a [LocalTunnel][lt-website] client written in C, designed for em
 TODO
 ----
 
-* Better client state management/state machine
 * Make JSMN JSON parsing much more robust and future-proof
 
 Use
 ---
 
-It is a work in progress, but if you want to try it out, there is a makefile, so simply running
+Simply running
 	
 	make
 
@@ -22,24 +21,32 @@ in the source directory will spit out a nice executable, which will open a local
 
 	./clocaltunneltest
 
-This kicks off the code you see in example.c. 
-
-If it doesn't work, make sure you have an ssh key on your system:
+This kicks off the code you see in example.c. I recommend doing this once to ferret out any configuration issues before diving into the code. One common problem is the lack of an ssh key on your machine. Localtunnel requires one, so create it using:
 
 	ssh-keygen -t rsa
 	ssh-add ~/.ssh/id_rsa
+
+Once you are ready to integrate the library into your own project, I suggest building a dylib:
+
+	make dylib
+
+The makefile also includes targets for building a fully self-contained static library and a basic example of how to link against clocaltunnel.
 
 
 Dependencies
 ------------
 
-I have developed and tested clocaltunnel on OS X. It probably works on Linux as well without too much hacking. You should probably have the Xcode Command Line tools installed at the very least, if not all of Xcode. 
+I have developed and tested clocaltunnel on OS X. It depends on the Xcode Command Line tools. 
 
-That being said, it depends on libcurl and pthread, which come with the OS, and libssh2, which you will have to install. I suggest using [HomeBrew][homebrew-website].
+It also depends on libcurl and pthread, which come with the OS, and libssh2, which you will have to install. I suggest using [HomeBrew][homebrew-website].
 
 [homebrew-website]: http://mxcl.github.com/homebrew/
+
+If you manage to statically cross-compile libssh2, you should be able to use the staticlibssh target in the makefile to build clocaltunnel for iOS.
+
+Finally, nothing here is actually Mac-specific so a minimal amount of hacking will probably allow you to use clocaltunnel on Linux and Cygwin. 
 
 License
 -------
 
-Uhhh... it's a free country. I'm a mediocre programmer and an even worse lawyer. Don't come looking for me if you use this on a mission-critical system and cause millions of dollars of loss or damage, though. That's between you and your insurance company. I make no guarantee as to whether using this code will ever set your grandmother on fire.
+MIT
