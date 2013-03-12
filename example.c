@@ -87,6 +87,11 @@ int main(int argc, char **argv) {
                     printf("No SSH key found on disk. Try creating one using ssh-keygen\n");
                     break;
                 }
+                case CLOCALTUNNEL_ERROR_JSON:
+                {
+                    printf("JSON parse error\n");
+                    break;
+                }
                 default:
                     break;
             }

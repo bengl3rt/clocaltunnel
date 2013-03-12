@@ -151,7 +151,8 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
 	rc = jsmn_parse(&p, chunk.memory, tok, 10);
 
 	if (rc) {
-		goto cleanup;
+		free(chunk.memory);
+		return CLOCALTUNNEL_ERROR_JSON;
 	}
 
 	char *host = malloc(tok[2].end - tok[2].start + 1);
