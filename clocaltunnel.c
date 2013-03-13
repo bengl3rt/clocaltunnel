@@ -59,28 +59,25 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 	return realsize;
 }
 
-char *get_ssh_key() {
-	struct passwd *pw = getpwuid(getuid());
+char *read_ssh_key(char *path) {
+	char true_path[strlen(path)+4];
+	sprintf(true_path, "%s.pub", path);
 
-	const char *homedir = pw->pw_dir;
-
-	const char *ssh_key_path = "/.ssh/id_rsa.pub";
-
-	char full_ssh_key_path[strlen(homedir)+strlen(ssh_key_path)+1];
-
-	sprintf(full_ssh_key_path, "%s%s", homedir, ssh_key_path);
+#ifdef CLOCALTUNNEL_DEBUG
+	printf("Loading key %s\n", true_path);
+#endif
 
 	long f_size;
 	char* key;
 	size_t key_size, result;
-	FILE* fp = fopen(full_ssh_key_path, "r");
+	FILE* fp = fopen(true_path, "r");
 
 	if (fp == NULL) {
 		return NULL;
 	}
 
 	fseek(fp, 0, SEEK_END);
-	f_size = ftell(fp); /* This returns 29696, but file is 85 bytes */
+	f_size = ftell(fp); 
 	fseek(fp, 0, SEEK_SET);
 	key_size = sizeof(char) * f_size;
 	key = malloc(key_size);
@@ -91,7 +88,7 @@ char *get_ssh_key() {
 	return key;
 }
 
-int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
+int contact_localtunnel_service(struct open_localtunnel *tunnelinfo, struct libssh2_agent_publickey *identity) {
 	int rc = 0;
 	char *tunnel_open_url = "http://open.localtunnel.com";
 
@@ -103,11 +100,7 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
 	chunk.memory = malloc(1);  /* will be grown as needed by the realloc above */ 
 	chunk.size = 0;    /* no data at this point */
 
-	char *ssh_key = get_ssh_key();
-
-	if (ssh_key == NULL) {
-		return CLOCALTUNNEL_ERROR_SSH_KEY;
-	}
+	char *ssh_key = read_ssh_key(identity->comment);
 
 #ifdef CLOCALTUNNEL_DEBUG
 	printf("SSH key length:%d\n", strlen(ssh_key));
@@ -133,8 +126,17 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo) {
 
 	curl_easy_setopt(curl_inst, CURLOPT_HTTPPOST, formpost);
 
+
+#ifdef CLOCALTUNNEL_DEBUG
+	printf("Sending HTTP contact\n");
+#endif
+
 	/* get it! */ 
 	CURLcode res = curl_easy_perform(curl_inst);
+
+#ifdef CLOCALTUNNEL_DEBUG
+	printf("Got reply chunk %s\n", chunk.memory);
+#endif
 
 	curl_formfree(formpost);
 
@@ -309,57 +311,17 @@ shutdown:
 	return rc;
 }
 
+struct libssh2_agent_publickey *get_ssh_key(LIBSSH2_AGENT *agent) {
+	struct libssh2_agent_publickey *identity, *prev_identity = NULL;
 
-int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_client *c) {
-	const char *remote_listenhost = "localhost"; /* resolved by the server */
-	char *local_destip = "127.0.0.1";
-
-	int rc = CLOCALTUNNEL_OK;
-	LIBSSH2_SESSION *session;
-	LIBSSH2_AGENT *agent = NULL;
-	LIBSSH2_LISTENER *listener = NULL;
-    struct libssh2_agent_publickey *identity, *prev_identity = NULL;
-
-#ifdef CLOCALTUNNEL_DEBUG
-    printf("Host: %s Port: %s User: %s\n", tunnelinfo.host, tunnelinfo.port, tunnelinfo.user);
-#endif
-
-	int sock;  
-
-	if (get_socket_to_localtunnel(&sock, tunnelinfo.host) != CLOCALTUNNEL_OK) {
-		return CLOCALTUNNEL_ERROR_SOCKET;
-	}
-
-	session = libssh2_session_init();
-
-    if (libssh2_session_handshake(session, sock)) {
-
-        fprintf(stderr, "Failure establishing SSH session\n");
-        return CLOCALTUNNEL_ERROR_SSH;
-    }
-
-	 /* Connect to the ssh-agent */ 
-    agent = libssh2_agent_init(session);
-
-    if (!agent) {
-        fprintf(stderr, "Failure initializing ssh-agent support\n");
-        rc = CLOCALTUNNEL_ERROR_SSH;
-        goto shutdown;
-    }
-    if (libssh2_agent_connect(agent)) {
-
-        fprintf(stderr, "Failure connecting to ssh-agent\n");
-        rc = CLOCALTUNNEL_ERROR_SSH;
-        goto shutdown;
-    }
-    if (libssh2_agent_list_identities(agent)) {
+	if (libssh2_agent_list_identities(agent)) {
 
         fprintf(stderr, "Failure requesting identities to ssh-agent\n");
-        rc = CLOCALTUNNEL_ERROR_SSH;
-        goto shutdown;
+        return NULL;
     }
+
     while (1) {
-        rc = libssh2_agent_get_identity(agent, &identity, prev_identity);
+        int rc = libssh2_agent_get_identity(agent, &identity, prev_identity);
 
         if (rc == 1) {
         	if (prev_identity == NULL) {
@@ -374,25 +336,58 @@ int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_clie
             fprintf(stderr,
                     "Failure obtaining identity from ssh-agent support\n");
 #endif
-            rc = CLOCALTUNNEL_ERROR_SSH_AGENT;
-            goto shutdown;
+            return NULL;
         }
-        if (libssh2_agent_userauth(agent, tunnelinfo.user, identity)) {
-#ifdef CLOCALTUNNEL_DEBUG
-            printf("Authentication with username %s and "
-                   "public key %s failed!\n",
-                   tunnelinfo.user, identity->comment);
-#endif
-        } else {
-#ifdef CLOCALTUNNEL_DEBUG
-            printf("Authentication with username %s and "
-                   "public key %s succeeded!\n",
-                   tunnelinfo.user, identity->comment);
-#endif
-            break;
-        }
+
+
         prev_identity = identity;
+
     }
+
+    return identity;
+}
+
+
+int open_ssh_tunnel(struct open_localtunnel tunnelinfo, struct clocaltunnel_client *c, LIBSSH2_SESSION *session, LIBSSH2_AGENT *agent, struct libssh2_agent_publickey *identity) {
+	const char *remote_listenhost = "localhost"; /* resolved by the server */
+	char *local_destip = "127.0.0.1";
+
+	int rc = CLOCALTUNNEL_OK;
+	LIBSSH2_LISTENER *listener = NULL;
+    
+
+#ifdef CLOCALTUNNEL_DEBUG
+    printf("Host: %s Port: %s User: %s\n", tunnelinfo.host, tunnelinfo.port, tunnelinfo.user);
+#endif
+
+	int sock;  
+
+	if (get_socket_to_localtunnel(&sock, tunnelinfo.host) != CLOCALTUNNEL_OK) {
+		return CLOCALTUNNEL_ERROR_SOCKET;
+	}
+
+    if (libssh2_session_handshake(session, sock)) {
+
+        fprintf(stderr, "Failure establishing SSH session\n");
+        return CLOCALTUNNEL_ERROR_SSH;
+    }
+
+  
+    if (libssh2_agent_userauth(agent, tunnelinfo.user, identity)) {
+#ifdef CLOCALTUNNEL_DEBUG
+        printf("Authentication with username %s and "
+               "public key %s failed!\n",
+               tunnelinfo.user, identity->comment);
+#endif
+    } else {
+#ifdef CLOCALTUNNEL_DEBUG
+        printf("Authentication with username %s and "
+               "public key %s succeeded!\n",
+               tunnelinfo.user, identity->comment);
+#endif
+    }
+        
+  
     if (rc) {
         fprintf(stderr, "Couldn't continue authentication\n");
         goto shutdown;
@@ -446,11 +441,7 @@ shutdown:
 
     libssh2_session_disconnect(session, "Client disconnecting normally");
 
-    libssh2_session_free(session);
-
     close(sock);
- 
-    libssh2_exit();
  
     return rc;
 }
@@ -460,8 +451,34 @@ void tunnel_local_port(struct clocaltunnel_client *c) {
 	struct open_localtunnel tunnelinfo;
 
 	memset(&tunnelinfo, 0, sizeof(struct open_localtunnel));
+
+	LIBSSH2_SESSION *session = libssh2_session_init();
+
+	/* Connect to the ssh-agent */ 
+    LIBSSH2_AGENT *agent = libssh2_agent_init(session);
+
+    if (!agent) {
+        fprintf(stderr, "Failure initializing ssh-agent support\n");
+        c->last_err = CLOCALTUNNEL_ERROR_SSH_AGENT;
+    } else if (libssh2_agent_connect(agent)) {
+        fprintf(stderr, "Failure connecting to ssh-agent\n");
+        c->last_err = CLOCALTUNNEL_ERROR_SSH_AGENT;
+    }
+
+    if (c->last_err != CLOCALTUNNEL_OK) {
+		c->state = CLOCALTUNNEL_CLIENT_ERROR;
+		goto cleanup;
+	}
+
+	struct libssh2_agent_publickey *identity = get_ssh_key(agent);
+
+	if (identity == NULL) {
+		c->last_err = CLOCALTUNNEL_ERROR_SSH_AGENT;
+		c->state = CLOCALTUNNEL_CLIENT_ERROR;
+		goto cleanup;
+	}
 	
-	c->last_err = contact_localtunnel_service(&tunnelinfo);
+	c->last_err = contact_localtunnel_service(&tunnelinfo, identity);
 
 	if (c->last_err != CLOCALTUNNEL_OK) {
 		c->state = CLOCALTUNNEL_CLIENT_ERROR;
@@ -472,7 +489,7 @@ void tunnel_local_port(struct clocaltunnel_client *c) {
 
 	c->external_url = tunnelinfo.host;
 
-	c->last_err = open_ssh_tunnel(tunnelinfo, c);
+	c->last_err = open_ssh_tunnel(tunnelinfo, c, session, agent, identity);
 
 	if (c->last_err != CLOCALTUNNEL_OK) {
 		printf("open_ssh_tunnel error: %d\n", c->last_err);
@@ -489,6 +506,9 @@ cleanup:
 
 	if (tunnelinfo.port)
 		free(tunnelinfo.port);
+
+	libssh2_session_free(session);
+	libssh2_exit();
 }
 
 void *client_thread_start(void *client_data) {
