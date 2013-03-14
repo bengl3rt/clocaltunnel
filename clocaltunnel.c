@@ -80,10 +80,12 @@ char *read_ssh_key(char *path) {
 	f_size = ftell(fp); 
 	fseek(fp, 0, SEEK_SET);
 	key_size = sizeof(char) * f_size;
-	key = malloc(key_size);
+	key = malloc(key_size+1);
 	result = fread(key, 1, f_size, fp);
 
 	fclose(fp);
+
+	key[key_size] = '\0';
 
 	return key;
 }
