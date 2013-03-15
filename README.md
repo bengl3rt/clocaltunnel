@@ -8,7 +8,7 @@ Clocaltunnel is a [LocalTunnel][lt-website] client written in C, designed for em
 TODO
 ----
 
-* Make JSMN JSON parsing much more robust and future-proof
+* Rewrite for Localtunnel v2 protocol
 
 Use
 ---
