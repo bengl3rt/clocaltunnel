@@ -106,6 +106,7 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo, struct libs
 
 #ifdef CLOCALTUNNEL_DEBUG
 	printf("SSH key length:%d\n", strlen(ssh_key));
+	printf("SSH key: %s\n", ssh_key);
 #endif
 
 	curl_easy_setopt(curl_inst, CURLOPT_URL, tunnel_open_url);
@@ -152,13 +153,14 @@ int contact_localtunnel_service(struct open_localtunnel *tunnelinfo, struct libs
 	}
 
 	jsmn_parser p;
-	jsmntok_t tok[100];
+	jsmntok_t tok[1000];
 	
 	jsmn_init(&p);
 
-	rc = jsmn_parse(&p, chunk.memory, tok, 100);
+	rc = jsmn_parse(&p, chunk.memory, tok, 1000);
 
 	if (rc) {
+		printf(chunk.memory);
 		free(chunk.memory);
 		return CLOCALTUNNEL_ERROR_JSON;
 	}
