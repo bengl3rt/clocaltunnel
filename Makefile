@@ -1,4 +1,4 @@
-#ARCHS=-arch i386
+ARCHS=-arch i386
 CFLAGS=-O3 -Wall $(ARCHS)
 LIB_DEPS=-lcurl -pthread -lz -lcrypto
 LIB_SOURCES=jsmn/jsmn.c clocaltunnel.c
@@ -36,7 +36,7 @@ staticlib:
 staticlibdebug: DEFINES = -DCLOCALTUNNEL_DEBUG
 staticlibdebug: staticlib
 
-#Build the example code linking the shared or static clocaltunnel libraru
+#Build the example code linking the shared or static clocaltunnel library
 libexample:
 	gcc $(CFLAGS) $(LIB_DEPS) -L. -lclocaltunnel -o clocaltunneltest example.c
 
